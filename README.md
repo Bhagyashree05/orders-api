@@ -752,55 +752,6 @@ public Order processPayment(...) {
 
 ---
 
-## 11. Bug Fix — JPQL Enum Literal in `SpringDataOutboxRepository`
-
-### Root Cause
-
-`SpringDataOutboxRepository` contained two JPQL queries that compared an `@Enumerated(EnumType.STRING)` field against **string literals** (`'PENDING'`, `'PROCESSING'`):
-
-```java
-// ❌ BEFORE — string literal in JPQL enum comparison (type mismatch at runtime)
-@Query("SELECT e FROM OutboxEntry e WHERE e.status = 'PENDING' ORDER BY e.createdAt ASC")
-List<OutboxEntry> findPendingOrderedByCreatedAt();
-
-@Modifying
-@Query("""
-        UPDATE OutboxEntry e
-           SET e.status = 'PROCESSING'
-         WHERE e.id = :id AND e.status = 'PENDING'
-        """)
-int claimForProcessing(@Param("id") UUID id);
-```
-
-In JPQL, string literals (`'PENDING'`) are always of type `String`. When the field being compared is a Java `enum` — even one stored as a `STRING` in the database — the JPA specification requires the comparison value to be an **enum constant**, not a string literal. Hibernate raises a `TypeMismatchException` at query execution time, causing:
-
-- `findPendingOrderedByCreatedAt()` to throw at every outbox poll — outbox relay never processes any entries.
-- `claimForProcessing()` to throw — the CAS claim step always fails, blocking event publishing entirely.
-
-**Affected tests:** all integration and E2E tests that exercise the Kafka outbox relay path (`KafkaOutboxRelayIT`, `OrderLifecycleE2EIT`, `OrderControllerIT` full lifecycle, `OrderPersistenceIT` outbox tests).
-
-### Fix
-
-Replace string literals with fully-qualified JPQL enum constant references. Also add `clearAutomatically = true` to `@Modifying` on the bulk `UPDATE` so Hibernate clears the first-level cache after the update, ensuring subsequent reads see the new status rather than a stale pre-update snapshot:
-
-```java
-// ✅ AFTER — correct JPQL enum constant reference
-@Query("SELECT e FROM OutboxEntry e WHERE e.status = com.omni.orders.infrastructure.persistence.outbox.OutboxStatus.PENDING ORDER BY e.createdAt ASC")
-List<OutboxEntry> findPendingOrderedByCreatedAt();
-
-@Modifying(clearAutomatically = true)
-@Query("""
-        UPDATE OutboxEntry e
-           SET e.status = com.omni.orders.infrastructure.persistence.outbox.OutboxStatus.PROCESSING
-         WHERE e.id = :id AND e.status = com.omni.orders.infrastructure.persistence.outbox.OutboxStatus.PENDING
-        """)
-int claimForProcessing(@Param("id") UUID id);
-```
-
-**File changed:** `src/main/java/com/omni/orders/infrastructure/persistence/outbox/SpringDataOutboxRepository.java`
-
----
-
 ## 12. Trade-offs & Out-of-scope
 
 ### Bounded context note
