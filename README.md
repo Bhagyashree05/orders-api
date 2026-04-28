@@ -1,7 +1,6 @@
 # Omni Selling — Backend Orders API
 
-A production-leaning order management service built as part of the Omni Selling backend code challenge.
-
+A production-leaning order management service.
 **Stack:** Java 21 · Spring Boot 3.2 · PostgreSQL · Hibernate/JPA · Apache Kafka · Flyway · Micrometer + Zipkin
 
 ---
@@ -641,7 +640,7 @@ Message key = `orderId` — guarantees all events for the same order land on the
 | `ORDER_FULFILLED` | `OrderStatusChangedPayload` | `previousStatus`, `newStatus` |
 | `ORDER_CANCELLED` | `OrderCancelledPayload` | `previousStatus`, `newStatus`, `reason` |
 
-`ORDER_CREATED` includes item details so ERP consumers can bootstrap without a second API call. `ORDER_PAID` and `ORDER_FULFILLED` are intentionally lean — consumers that need full order data call `GET /api/v1/orders/{orderId}`.
+`ORDER_CREATED` carries a lean order snapshot so consumers avoid synchronous API callbacks. State-change events are intentionally lean. `GET /orders/{orderId}` is only for recovery/debug flows.
 
 ### Consumers
 
@@ -696,7 +695,7 @@ public Order processPayment(...) {
 1. Order state change + `OutboxEntry` INSERT are in the **same DB transaction** (atomic)
 2. `OutboxRelayScheduler` polls `order_outbox` every N ms (configurable via `outbox.poll-interval-ms`)
 3. CAS `UPDATE SET status='PROCESSING' WHERE status='PENDING'` prevents double-publishing across instances
-4. Synchronous `kafkaTemplate.send().get()` — failure propagates back so the entry is marked FAILED for retry
+4. Synchronous `kafkaTemplate.send().get()` — Failure increments retry_count and returns the entry to PENDING. After max retries, the entry is marked FAILED with last_error.
 5. Success marks the entry PUBLISHED
 
 **Status lifecycle:** `PENDING → PROCESSING → PUBLISHED` or `PENDING → PROCESSING → FAILED` (with `retry_count` and `last_error`)
