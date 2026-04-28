@@ -1,0 +1,90 @@
+services:
+
+  # ── PostgreSQL ──────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: omni-postgres
+    environment:
+      POSTGRES_DB:       ordersdb
+      POSTGRES_USER:     orders
+      POSTGRES_PASSWORD: orders
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orders -d ordersdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Kafka (KRaft mode — no Zookeeper required) ──────────────────────────────
+  # KRaft is production-ready from Kafka 3.3+ (bundled in cp-kafka 7.4+).
+  # Running without Zookeeper removes one container, one health-check dependency,
+  # and eliminates the "nc not found" failure on cp-zookeeper.
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: omni-kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092"]
+      interval: 10s
+      timeout: 10s
+      start_period: 30s
+      retries: 10
+
+  # ── Zipkin (distributed tracing UI) ────────────────────────────────────────
+  zipkin:
+    image: openzipkin/zipkin:3
+    container_name: omni-zipkin
+    ports:
+      - "9411:9411"
+
+  # ── The Application ─────────────────────────────────────────────────────────
+  orders-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: omni-orders-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE:     docker
+      DB_URL:                     jdbc:postgresql://postgres:5432/ordersdb
+      DB_USER:                    orders
+      DB_PASSWORD:                orders
+      KAFKA_BOOTSTRAP_SERVERS:    kafka:29092
+      ZIPKIN_URL:                 http://zipkin:9411
+      SERVER_PORT:                8080
+      OUTBOX_POLL_INTERVAL_MS:    5000
+      OUTBOX_MAX_RETRIES:         3
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q UP || exit 1"]
+      interval: 15s
+      timeout: 5s
+      start_period: 60s
+      retries: 5
+
+volumes:
+  postgres_data:

@@ -1,0 +1,21 @@
+spring:
+  jpa:
+    show-sql: true
+  flyway:
+    enabled: true
+  scheduling:
+    enabled: false
+
+management:
+  tracing:
+    sampling:
+      probability: 0.0
+
+logging:
+  level:
+    com.omni.orders: DEBUG
+    org.apache.kafka: WARN
+
+outbox:
+  poll-interval-ms: 3600000
+  max-retries: 3

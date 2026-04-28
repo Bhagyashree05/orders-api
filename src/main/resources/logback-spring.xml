@@ -1,0 +1,26 @@
+<configuration>
+  <springProperty scope="context" name="APP" source="spring.application.name" defaultValue="omni-orders-api"/>
+  <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+      <customFields>{"service":"${APP}"}</customFields>
+      <includeMdcKeyName>traceId</includeMdcKeyName>
+      <includeMdcKeyName>spanId</includeMdcKeyName>
+      <includeMdcKeyName>requestId</includeMdcKeyName>
+    </encoder>
+  </appender>
+  <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <pattern>%d{HH:mm:ss.SSS} %-5level [%X{traceId},%X{spanId},%X{requestId}] %logger{30} - %msg%n</pattern>
+    </encoder>
+  </appender>
+  <root level="INFO">
+    <springProfile name="local"><appender-ref ref="CONSOLE"/></springProfile>
+    <springProfile name="!local"><appender-ref ref="JSON"/></springProfile>
+  </root>
+  <logger name="com.omni.orders" level="DEBUG" additivity="false">
+    <springProfile name="local"><appender-ref ref="CONSOLE"/></springProfile>
+    <springProfile name="!local"><appender-ref ref="JSON"/></springProfile>
+  </logger>
+  <logger name="org.apache.kafka" level="WARN"/>
+  <logger name="org.hibernate.SQL" level="DEBUG"/>
+</configuration>

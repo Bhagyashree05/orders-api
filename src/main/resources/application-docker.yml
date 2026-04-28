@@ -1,0 +1,10 @@
+spring:
+  jpa:
+    show-sql: false
+  datasource:
+    hikari:
+      maximum-pool-size: 20
+logging:
+  level:
+    com.omni.orders: INFO
+    org.apache.kafka: WARN
