@@ -1,6 +1,7 @@
 # Omni Selling — Backend Orders API
 
 A production-leaning order management service.
+
 **Stack:** Java 21 · Spring Boot 3.2 · PostgreSQL · Hibernate/JPA · Apache Kafka · Flyway · Micrometer + Zipkin
 
 ---
